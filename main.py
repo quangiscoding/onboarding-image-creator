@@ -141,47 +141,28 @@ def process_welcome_card(
     position: str,
     squad: str,
 ) -> str:
-    # 1. Resize khung về chuẩn 1000x1000 và ép về kênh RGBA
+    # 1. Resize khung về chuẩn 1000x1000 và giữ nguyên kênh trong suốt RGBA
     template = template.resize((1000, 1000), Image.Resampling.LANCZOS).convert(
         "RGBA"
     )
 
-    # 2. ĐỤC LỖ BẮT BỤC TRÊN KHUNG TEMPLATE:
-    # Tạo Mask màu trắng (255), vẽ hình tròn màu đen (0) chính xác tại vùng Avatar gốc (X: 235->765, Y: 215->615)
-    mask_hole = Image.new("L", (1000, 1000), 255)
-    draw_hole = ImageDraw.Draw(mask_hole)
-    # Vẽ hình ellipse đục thủng hoàn toàn nền xanh/trắng cũ
-    draw_hole.ellipse((235, 215, 765, 615), fill=0)
-
-    # Áp mask vào Alpha channel của Template
-    import PIL.ImageChops as ImageChops
-
-    r, g, b, a = template.split()
-    new_alpha = ImageChops.multiply(a, mask_hole)
-    template.putalpha(new_alpha)
-
-    # 3. GHÉP CÁC LAYER THEO THỨ TỰ ĐÚNG BẢN CHẤT:
-    # Canvas tổng thể
+    # 2. Tạo Canvas nền trắng tổng thể
     canvas = Image.new("RGBA", (1000, 1000), (255, 255, 255, 255))
 
-    # --- LAYER 1 (ĐÁY): Dán Avatar Ứng Viên (Giữ hình vuông chuẩn 480x480, dán lót bên dưới)
-    # Vì nằm ở ĐÁY nên phần cạnh trên của avatar sẽ chui xuống DƯỚI nền đỏ của khung, KHÔNG BẠO GIỜ đè chữ WELCOME ONBOARD!
-    avatar_size = 480
-    avatar_square = get_round_avatar(
-        photo, avatar_size
-    )  # Hoặc dùng photo vuông
-    canvas.paste(avatar_square, (260, 155), avatar_square)
+    # 3. LAYER 1 (ĐÁY): Dán Avatar
+    # Ảnh avatar dạng tròn (size 470px), dán lót bên dưới tâm lỗ (X: 265, Y: 215)
+    avatar_size = 470
+    round_avatar = get_round_avatar(photo, avatar_size)
+    canvas.paste(round_avatar, (265, 215), round_avatar)
 
-    # --- LAYER 2 (GIỮA): Dán Khung Đã Đục Lỗ Đè Lên Trên Avatar
+    # 4. LAYER 2 (GIỮA): Dán Khung Đục Lỗ Đè Lên Trên Avatar
     canvas.paste(template, (0, 0), template)
 
-    # --- LAYER 3 (TRÊN CÙNG): Che chữ mẫu & Vẽ chữ thật
+    # 5. LAYER 3 (TRÊN CÙNG): Vẽ dải đen bo góc chứa Name & Vẽ chữ
     draw = ImageDraw.Draw(canvas)
 
-    # Che dải đen mẫu cũ & 2 chữ Position / Squad cũ
-    draw.rounded_rectangle([200, 615, 800, 710], radius=45, fill="#2b2b2b")
-    bg_color = template.getpixel((100, 750))
-    draw.rectangle([250, 725, 750, 850], fill=bg_color)
+    # Vẽ dải đen bo góc mới làm nền cho Name
+    draw.rounded_rectangle([200, 625, 800, 720], radius=45, fill="#2b2b2b")
 
     # Load Font
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -201,17 +182,18 @@ def process_welcome_card(
         font_name = ImageFont.load_default()
         font_sub = ImageFont.load_default()
 
-    # Vẽ chữ thật
+    # Vẽ HỌ TÊN (giữa dải đen)
     draw.text(
-        (500, 662), name.upper(), font=font_name, fill="white", anchor="mm"
+        (500, 672), name.upper(), font=font_name, fill="white", anchor="mm"
     )
-    draw.text((500, 755), position, font=font_sub, fill="white", anchor="mm")
+
+    # Vẽ CHỨC DANH & SQUAD
+    draw.text((500, 760), position, font=font_sub, fill="white", anchor="mm")
     draw.text((500, 815), squad, font=font_sub, fill="white", anchor="mm")
 
     buffered = io.BytesIO()
     canvas.convert("RGB").save(buffered, format="JPEG", quality=95)
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
-
 
 @app.get("/")
 def health_check():
