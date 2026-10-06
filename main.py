@@ -1,6 +1,8 @@
 import base64
 import io
 import os
+import re
+from typing import Optional
 import cv2
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 import numpy as np
@@ -21,11 +23,21 @@ class OnboardRequest(BaseModel):
 
 def download_image(url: str) -> Image.Image:
     try:
-        response = requests.get(url, timeout=15)
+        # Tự động chuyển link Google Drive xem preview thành link direct download
+        drive_match = re.search(r"(?:id=|\/d\/)([a-zA-Z0-9_-]+)", url)
+        if "drive.google.com" in url and drive_match:
+            file_id = drive_match.group(1)
+            url = f"https://drive.google.com/uc?export=download&id={file_id}"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=15)
         return Image.open(io.BytesIO(response.content)).convert("RGBA")
     except Exception as e:
         raise HTTPException(
-            status_code=400, detail=f"Không tải được ảnh từ URL: {str(e)}"
+            status_code=400,
+            detail=f"Không tải được ảnh từ URL/Drive: {str(e)}",
         )
 
 
@@ -117,6 +129,7 @@ def health_check():
     return {"status": "ok", "message": "Onboarding Image Creator Service"}
 
 
+# Endpoint 1: Chuẩn JSON payload (Dùng khi có cả 2 link URL)
 @app.post("/generate-welcome-card")
 async def generate_welcome_card(req: OnboardRequest):
     photo = download_image(req.image_url)
@@ -127,23 +140,48 @@ async def generate_welcome_card(req: OnboardRequest):
     return {"success": True, "image_base64": img_str}
 
 
+# Endpoint 2: Linh hoạt nhận File Upload HOẶC URL/Drive Link cho cả Ảnh lẫn Khung
 @app.post("/generate-welcome-card-upload")
 async def generate_welcome_card_upload(
-    file: UploadFile = File(...),
-    frame_url: str = Form(...),
+    file: Optional[UploadFile] = File(None),
+    image_url: Optional[str] = Form(None),
+    frame_file: Optional[UploadFile] = File(None),
+    frame_url: Optional[str] = Form(None),
     name: str = Form(...),
     position: str = Form(...),
     squad: str = Form(...),
 ):
     try:
-        contents = await file.read()
-        photo = Image.open(io.BytesIO(contents)).convert("RGBA")
-        template = download_image(frame_url)
+        # 1. Lấy Ảnh Ứng Viên (Ưu tiên File Upload, nếu không có thì lấy Link URL/Drive)
+        if file:
+            contents = await file.read()
+            photo = Image.open(io.BytesIO(contents)).convert("RGBA")
+        elif image_url:
+            photo = download_image(image_url)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Cần truyền ảnh ứng viên (file hoặc image_url)",
+            )
 
-        img_str = process_welcome_card(
-            photo, template, name, position, squad
-        )
+        # 2. Lấy Khung Template (Ưu tiên File Upload, nếu không có thì lấy Link URL/Drive)
+        if frame_file:
+            frame_contents = await frame_file.read()
+            template = Image.open(io.BytesIO(frame_contents)).convert("RGBA")
+        elif frame_url:
+            template = download_image(frame_url)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Cần truyền khung template (frame_file hoặc frame_url)",
+            )
+
+        # 3. Xử lý ghép ảnh
+        img_str = process_welcome_card(photo, template, name, position, squad)
         return {"success": True, "image_base64": img_str}
+
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Lỗi xử lý ảnh: {str(e)}"
