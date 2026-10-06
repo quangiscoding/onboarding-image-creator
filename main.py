@@ -30,6 +30,9 @@ class OnboardRequest(BaseModel):
     name: str
     position: str
     squad: str
+    offset_x: Optional[int] = 0
+    offset_y: Optional[int] = 0
+    zoom_scale: Optional[float] = 1.0
 
 
 def load_image_from_bytes(data: bytes) -> Image.Image:
@@ -46,23 +49,19 @@ def download_image(url: str) -> Image.Image:
         if "drive.google.com" in url and drive_match:
             file_id = drive_match.group(1)
 
-            # Tạo Session để duy trì Cookie xác nhận tải file từ Drive
             session = requests.Session()
             drive_url = "https://docs.google.com/uc?export=download"
 
-            # Request lần 1 để lấy Cookie
             response = session.get(
                 drive_url, params={"id": file_id}, timeout=15
             )
 
-            # Tìm token xác nhận nếu file bị dính trang cảnh báo virus/file lớn
             token = None
             for key, value in response.cookies.items():
                 if key.startswith("download_warning"):
                     token = value
                     break
 
-            # Request lần 2 với token xác nhận để tải đúng file ảnh Binary
             if token:
                 response = session.get(
                     drive_url,
@@ -88,7 +87,13 @@ def download_image(url: str) -> Image.Image:
         )
 
 
-def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
+def get_round_avatar(
+    photo: Image.Image,
+    size: int,
+    offset_x: int = 0,
+    offset_y: int = 0,
+    zoom_scale: float = 1.0,
+) -> Image.Image:
     photo_np = np.array(photo.convert("RGB"))
     gray = cv2.cvtColor(photo_np, cv2.COLOR_RGB2GRAY)
 
@@ -104,11 +109,14 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
     if len(faces) > 0:
         x, y, w, h = max(faces, key=lambda b: b[2] * b[3])
 
-        # TĂNG MẠNH PADDING ĐỂ ZOOM RỘNG HƠN HẲN (Kéo nhiều không gian phía trên đầu & vai)
-        crop_top = max(0, y - int(h * 2.2))
-        crop_bottom = min(height, y + h + int(h * 1.8))
-        crop_left = max(0, x - int(w * 1.6))
-        crop_right = min(width, x + w + int(w * 1.6))
+        # Áp dụng offset_x, offset_y và zoom_scale linh hoạt
+        x_center = x + w // 2 + offset_x
+        y_center = y + h // 2 + offset_y
+
+        crop_top = max(0, y_center - int(h * 2.2 * zoom_scale))
+        crop_bottom = min(height, y_center + int(h * 1.8 * zoom_scale))
+        crop_left = max(0, x_center - int(w * 1.6 * zoom_scale))
+        crop_right = min(width, x_center + int(w * 1.6 * zoom_scale))
 
         photo_cropped = photo.crop(
             (crop_left, crop_top, crop_right, crop_bottom)
@@ -117,14 +125,13 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
         min_dim = min(width, height)
         photo_cropped = photo.crop(
             (
-                (width - min_dim) // 2,
-                (height - min_dim) // 2,
-                (width + min_dim) // 2,
-                (height + min_dim) // 2,
+                (width - min_dim) // 2 + offset_x,
+                (height - min_dim) // 2 + offset_y,
+                (width + min_dim) // 2 + offset_x,
+                (height + min_dim) // 2 + offset_y,
             )
         )
 
-    # centering=(0.5, 0.3) giúp giữ vị trí khuôn mặt nằm cân đối ở 1/3 phía trên
     photo_square = ImageOps.fit(
         photo_cropped,
         (size, size),
@@ -138,7 +145,6 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
 
     round_img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     round_img.paste(photo_square, (0, 0), mask)
-
     return round_img
 
 
@@ -148,16 +154,19 @@ def process_welcome_card(
     name: str,
     position: str,
     squad: str,
+    offset_x: int = 0,
+    offset_y: int = 0,
+    zoom_scale: float = 1.0,
 ) -> str:
     # 1. Resize khung về chuẩn 1000x1000 và ép về RGBA
     template = template.resize((1000, 1000), Image.Resampling.LANCZOS).convert(
         "RGBA"
     )
 
-    # 2. ĐỤC LỖ BẰNG CODE: Đục thủng mảng caro giả ở tâm (Tâm X: 500, Y: 450, Bán kính ~230px)
+    # 2. ĐỤC LỖ BẰNG CODE
     mask_hole = Image.new("L", (1000, 1000), 255)
     draw_hole = ImageDraw.Draw(mask_hole)
-    draw_hole.ellipse((270, 228, 730, 672), fill=0)  # Đục thủng vùng caro
+    draw_hole.ellipse((270, 228, 730, 672), fill=0)
 
     r, g, b, a = template.split()
     new_alpha = ImageChops.multiply(a, mask_hole)
@@ -166,22 +175,24 @@ def process_welcome_card(
     # 3. CANVAS NỀN TỔNG THỂ
     canvas = Image.new("RGBA", (1000, 1000), (255, 255, 255, 255))
 
-    # 4. LAYER 1 (ĐÁY): Dán Avatar
-    # Avatar kích thước 470px, đặt tại X: 265, Y: 215 (Chui qua lỗ đục tự nhiên)
+    # 4. LAYER 1 (ĐÁY): Dán Avatar có truyền Offset & Zoom
     avatar_size = 470
-    round_avatar = get_round_avatar(photo, avatar_size)
+    round_avatar = get_round_avatar(
+        photo,
+        avatar_size,
+        offset_x=offset_x,
+        offset_y=offset_y,
+        zoom_scale=zoom_scale,
+    )
     canvas.paste(round_avatar, (265, 215), round_avatar)
 
     # 5. LAYER 2 (GIỮA): Dán Khung Đã Đục Thủng Lên Trên Avatar
     canvas.paste(template, (0, 0), template)
 
-    # 6. LAYER 3 (TRÊN CÙNG): Vẽ dải đen bo góc cho HỌ TÊN & Viết chữ
+    # 6. LAYER 3 (TRÊN CÙNG): Vẽ dải đen bo góc & Viết chữ
     draw = ImageDraw.Draw(canvas)
-
-    # Vẽ dải đen bo góc cho tên ngay dưới khung tròn
     draw.rounded_rectangle([200, 645, 800, 735], radius=45, fill="#2b2b2b")
 
-    # Load Font (Local hoặc fallback CDN)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     font_path = os.path.join(base_dir, "fonts", "Montserrat-Bold.ttf")
 
@@ -222,7 +233,14 @@ async def generate_welcome_card(req: OnboardRequest):
     photo = download_image(req.image_url)
     template = download_image(req.frame_url)
     img_str = process_welcome_card(
-        photo, template, req.name, req.position, req.squad
+        photo,
+        template,
+        req.name,
+        req.position,
+        req.squad,
+        offset_x=req.offset_x,
+        offset_y=req.offset_y,
+        zoom_scale=req.zoom_scale,
     )
     return {"success": True, "image_base64": img_str}
 
@@ -237,6 +255,9 @@ async def generate_welcome_card_upload(
     name: str = Form(...),
     position: str = Form(...),
     squad: str = Form(...),
+    offset_x: Optional[int] = Form(0),
+    offset_y: Optional[int] = Form(0),
+    zoom_scale: Optional[float] = Form(1.0),
 ):
     try:
         # 1. Lấy Ảnh Ứng Viên
@@ -264,7 +285,16 @@ async def generate_welcome_card_upload(
             )
 
         # 3. Xử lý ghép ảnh
-        img_str = process_welcome_card(photo, template, name, position, squad)
+        img_str = process_welcome_card(
+            photo,
+            template,
+            name,
+            position,
+            squad,
+            offset_x=offset_x,
+            offset_y=offset_y,
+            zoom_scale=zoom_scale,
+        )
         return {"success": True, "image_base64": img_str}
 
     except HTTPException as he:
