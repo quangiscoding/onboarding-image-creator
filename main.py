@@ -142,29 +142,43 @@ def process_welcome_card(
     # 1. Resize khung về chuẩn 1000x1000
     template = template.resize((1000, 1000), Image.Resampling.LANCZOS)
 
-    # 2. Cắt avatar tròn cỡ 380px và đặt vào tâm khung hình tròn (Toạ độ X: 310, Y: 180)
-    avatar_size = 380
+    # 2. Cắt & dán Avatar tròn (Kích thước 460px, đặt tại X: 270, Y: 180)
+    avatar_size = 460
     round_avatar = get_round_avatar(photo, avatar_size)
-    template.paste(round_avatar, (310, 180), round_avatar)
+    template.paste(round_avatar, (270, 180), round_avatar)
 
     draw = ImageDraw.Draw(template)
-    font_path = os.path.join("fonts", "Montserrat-Bold.ttf")
 
+    # 3. CHE CHỮ MẪU TRÊN KHUNG GỐC:
+    # - Che chữ "NAME" bằng cách vẽ lại dải bo góc màu đen mới (X: 200->800, Y: 615->705)
+    draw.rounded_rectangle(
+        [200, 615, 800, 705], radius=45, fill="#2b2b2b"
+    )  # Màu đen đè đè chữ NAME
+
+    # - Che chữ "Position" & "Squad" mẫu bằng hình chữ nhật màu đỏ của nền
+    # Màu đỏ nền gốc là #b9121b (hoặc RGB 185, 18, 27)
+    bg_color = template.getpixel((100, 750))  # Lấy màu đỏ tự động từ nền
+    draw.rectangle([350, 725, 650, 845], fill=bg_color)  # Xóa sạch chữ cũ
+
+    # 4. LOAD FONT & VẼ CHỮ THẬT
+    font_path = os.path.join("fonts", "Montserrat-Bold.ttf")
     try:
-        font_name = ImageFont.truetype(font_path, 32)
-        font_sub = ImageFont.truetype(font_path, 22)
+        font_name = ImageFont.truetype(font_path, 34)
+        font_sub = ImageFont.truetype(font_path, 25)
     except IOError:
         font_name = ImageFont.load_default()
         font_sub = ImageFont.load_default()
 
-    # 3. Vẽ HỌ TÊN vào giữa dải bo góc màu đen (Y ~ 605)
-    draw.text((500, 605), name.upper(), font=font_name, fill="white", anchor="mm")
+    # - Vẽ HỌ TÊN (Nằm giữa dải đen)
+    draw.text(
+        (500, 660), name.upper(), font=font_name, fill="white", anchor="mm"
+    )
 
-    # 4. Vẽ CHỨC DANH ngay DƯỚI chữ Position có sẵn (Y ~ 725)
-    draw.text((500, 725), position, font=font_sub, fill="white", anchor="mm")
+    # - Vẽ CHỨC DANH (Position)
+    draw.text((500, 755), position, font=font_sub, fill="white", anchor="mm")
 
-    # 5. Vẽ SQUAD ngay DƯỚI chữ Squad có sẵn (Y ~ 800)
-    draw.text((500, 800), squad, font=font_sub, fill="white", anchor="mm")
+    # - Vẽ SQUAD
+    draw.text((500, 818), squad, font=font_sub, fill="white", anchor="mm")
 
     buffered = io.BytesIO()
     template.convert("RGB").save(buffered, format="JPEG", quality=95)
