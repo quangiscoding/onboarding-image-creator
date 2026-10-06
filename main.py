@@ -144,19 +144,23 @@ def process_welcome_card(
     # 1. Resize khung về chuẩn 1000x1000
     template = template.resize((1000, 1000), Image.Resampling.LANCZOS)
 
-    # 2. CĂN TÂM CHUẨN TỪNG PIXEL: Size 475px, X = (1000-475)/2 = 263, Y = 185
-    avatar_size = 475
+    # 2. TĂNG SIZE AVATAR LÊN 490px VÀ ĐẨY Y LÊN 160 ĐỂ LẤP SẠCH KHUNG TRÒN & VIỀN SÓNG
+    avatar_size = 490
     round_avatar = get_round_avatar(photo, avatar_size)
-    template.paste(round_avatar, (263, 185), round_avatar)
+    # Tọa độ X căn giữa chuẩn: (1000 - 490) / 2 = 255, Y = 160
+    template.paste(round_avatar, (255, 160), round_avatar)
 
     draw = ImageDraw.Draw(template)
 
     # 3. CHE CHỮ MẪU TRÊN KHUNG GỐC
+    # Che dải đen cũ (Y từ 615 đến 710)
     draw.rounded_rectangle([200, 615, 800, 710], radius=45, fill="#2b2b2b")
+
+    # Che chữ Position & Squad bằng màu đỏ tự động lấy từ nền
     bg_color = template.getpixel((100, 750))
     draw.rectangle([250, 725, 750, 850], fill=bg_color)
 
-    # 4. LOAD FONT BẰNG ĐƯỜNG DẪN TUYỆT ĐỐI KHU VỰC LOCAL / CDN
+    # 4. LOAD FONT BẰNG ĐƯỜNG DẪN LOCAL / CDN
     base_dir = os.path.dirname(os.path.abspath(__file__))
     font_path = os.path.join(base_dir, "fonts", "Montserrat-Bold.ttf")
 
@@ -174,7 +178,7 @@ def process_welcome_card(
         font_name = ImageFont.load_default()
         font_sub = ImageFont.load_default()
 
-    # 5. VẼ CHỮ
+    # 5. VẼ CHỮ CÂN ĐỐI
     draw.text(
         (500, 662), name.upper(), font=font_name, fill="white", anchor="mm"
     )
