@@ -134,7 +134,6 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
 
     return round_img
 
-
 def process_welcome_card(
     photo: Image.Image,
     template: Image.Image,
@@ -145,33 +144,37 @@ def process_welcome_card(
     # 1. Resize khung về chuẩn 1000x1000
     template = template.resize((1000, 1000), Image.Resampling.LANCZOS)
 
-    # 2. CĂN TÂM AVATAR VỪA KHÍT (Size 465px, đặt tại X: 268, Y: 182)
-    avatar_size = 465
+    # 2. CĂN TÂM CHUẨN TỪNG PIXEL: Size 475px, X = (1000-475)/2 = 263, Y = 185
+    avatar_size = 475
     round_avatar = get_round_avatar(photo, avatar_size)
-    template.paste(round_avatar, (268, 182), round_avatar)
+    template.paste(round_avatar, (263, 185), round_avatar)
 
     draw = ImageDraw.Draw(template)
 
-    # 3. CHE CHỮ MẪU TRÊN KHUNG GỐC:
-    # - Che chữ "NAME" bằng dải bo góc màu đen mới
+    # 3. CHE CHỮ MẪU TRÊN KHUNG GỐC
     draw.rounded_rectangle([200, 615, 800, 710], radius=45, fill="#2b2b2b")
-
-    # - Che chữ "Position" & "Squad" mẫu bằng hình chữ nhật màu đỏ lấy tự động từ nền
     bg_color = template.getpixel((100, 750))
     draw.rectangle([250, 725, 750, 850], fill=bg_color)
 
-    # 4. LOAD FONT BẰNG ĐƯỜNG DẪN TUYỆT ĐỐI (Tránh bị rơi vào font mặc định bé tẹo)
+    # 4. LOAD FONT BẰNG ĐƯỜNG DẪN TUYỆT ĐỐI KHU VỰC LOCAL / CDN
     base_dir = os.path.dirname(os.path.abspath(__file__))
     font_path = os.path.join(base_dir, "fonts", "Montserrat-Bold.ttf")
 
     try:
-        font_name = ImageFont.truetype(font_path, 36)
-        font_sub = ImageFont.truetype(font_path, 28)
-    except IOError:
+        if os.path.exists(font_path):
+            font_name = ImageFont.truetype(font_path, 36)
+            font_sub = ImageFont.truetype(font_path, 28)
+        else:
+            font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-Bold.ttf"
+            res = requests.get(font_url, timeout=10)
+            font_bytes = io.BytesIO(res.content)
+            font_name = ImageFont.truetype(font_bytes, 36)
+            font_sub = ImageFont.truetype(font_bytes, 28)
+    except Exception:
         font_name = ImageFont.load_default()
         font_sub = ImageFont.load_default()
 
-    # 5. VẼ CHỮ TO RÕ NÉT VÀO TỌA ĐỘ BẮT MẮT
+    # 5. VẼ CHỮ
     draw.text(
         (500, 662), name.upper(), font=font_name, fill="white", anchor="mm"
     )
@@ -181,7 +184,6 @@ def process_welcome_card(
     buffered = io.BytesIO()
     template.convert("RGB").save(buffered, format="JPEG", quality=95)
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
-
 
 @app.get("/")
 def health_check():
