@@ -40,24 +40,51 @@ def load_image_from_bytes(data: bytes) -> Image.Image:
 
 def download_image(url: str) -> Image.Image:
     try:
-        # Tự động chuyển link Google Drive view/preview thành direct download
+        # 1. Bắt ID nếu là link Google Drive
         drive_match = re.search(r"(?:id=|\/d\/)([a-zA-Z0-9_-]+)", url)
         if "drive.google.com" in url and drive_match:
             file_id = drive_match.group(1)
-            url = f"https://drive.google.com/uc?export=download&id={file_id}"
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        return load_image_from_bytes(response.content)
+            # Tạo Session để duy trì Cookie xác nhận tải file từ Drive
+            session = requests.Session()
+            drive_url = "https://docs.google.com/uc?export=download"
+
+            # Request lần 1 để lấy Cookie
+            response = session.get(
+                drive_url, params={"id": file_id}, timeout=15
+            )
+
+            # Tìm token xác nhận nếu file bị dính trang cảnh báo virus/file lớn
+            token = None
+            for key, value in response.cookies.items():
+                if key.startswith("download_warning"):
+                    token = value
+                    break
+
+            # Request lần 2 với token xác nhận để tải đúng file ảnh Binary
+            if token:
+                response = session.get(
+                    drive_url,
+                    params={"id": file_id, "confirm": token},
+                    timeout=15,
+                )
+
+            return load_image_from_bytes(response.content)
+
+        # 2. Nếu là link URL ảnh thông thường trên mạng
+        else:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            response = requests.get(url, headers=headers, timeout=15)
+            response.raise_for_status()
+            return load_image_from_bytes(response.content)
+
     except Exception as e:
         raise HTTPException(
             status_code=400,
             detail=f"Không tải được ảnh từ URL/Drive: {str(e)}",
         )
-
 
 def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
     photo_np = np.array(photo.convert("RGB"))
