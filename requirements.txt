@@ -5,3 +5,4 @@ numpy==1.26.4
 opencv-python-headless==4.9.0.80
 requests==2.31.0
 pydantic==2.6.4
+python-multipart==0.0.9
