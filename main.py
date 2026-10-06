@@ -134,6 +134,9 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
 
     return round_img
 
+import PIL.ImageChops as ImageChops
+
+
 def process_welcome_card(
     photo: Image.Image,
     template: Image.Image,
@@ -141,30 +144,39 @@ def process_welcome_card(
     position: str,
     squad: str,
 ) -> str:
-    # 1. Resize khung về chuẩn 1000x1000 và giữ nguyên kênh trong suốt RGBA
+    # 1. Resize khung về chuẩn 1000x1000 và ép về RGBA
     template = template.resize((1000, 1000), Image.Resampling.LANCZOS).convert(
         "RGBA"
     )
 
-    # 2. Tạo Canvas nền trắng tổng thể
+    # 2. ĐỤC LỖ BẰNG CODE: Đục thủng mảng caro giả ở tâm (Tâm X: 500, Y: 450, Bán kính ~230px)
+    mask_hole = Image.new("L", (1000, 1000), 255)
+    draw_hole = ImageDraw.Draw(mask_hole)
+    draw_hole.ellipse((270, 228, 730, 672), fill=0)  # Đục thủng vùng caro
+
+    r, g, b, a = template.split()
+    new_alpha = ImageChops.multiply(a, mask_hole)
+    template.putalpha(new_alpha)
+
+    # 3. CANVAS NỀN TỔNG THỂ
     canvas = Image.new("RGBA", (1000, 1000), (255, 255, 255, 255))
 
-    # 3. LAYER 1 (ĐÁY): Dán Avatar
-    # Ảnh avatar dạng tròn (size 470px), dán lót bên dưới tâm lỗ (X: 265, Y: 215)
+    # 4. LAYER 1 (ĐÁY): Dán Avatar
+    # Avatar kích thước 470px, đặt tại X: 265, Y: 215 (Chui qua lỗ đục tự nhiên)
     avatar_size = 470
     round_avatar = get_round_avatar(photo, avatar_size)
     canvas.paste(round_avatar, (265, 215), round_avatar)
 
-    # 4. LAYER 2 (GIỮA): Dán Khung Đục Lỗ Đè Lên Trên Avatar
+    # 5. LAYER 2 (GIỮA): Dán Khung Đã Đục Thủng Lên Trên Avatar
     canvas.paste(template, (0, 0), template)
 
-    # 5. LAYER 3 (TRÊN CÙNG): Vẽ dải đen bo góc chứa Name & Vẽ chữ
+    # 6. LAYER 3 (TRÊN CÙNG): Vẽ dải đen bo góc cho HỌ TÊN & Viết chữ
     draw = ImageDraw.Draw(canvas)
 
-    # Vẽ dải đen bo góc mới làm nền cho Name
-    draw.rounded_rectangle([200, 625, 800, 720], radius=45, fill="#2b2b2b")
+    # Vẽ dải đen bo góc cho tên ngay dưới khung tròn
+    draw.rounded_rectangle([200, 645, 800, 735], radius=45, fill="#2b2b2b")
 
-    # Load Font
+    # Load Font (Local hoặc fallback CDN)
     base_dir = os.path.dirname(os.path.abspath(__file__))
     font_path = os.path.join(base_dir, "fonts", "Montserrat-Bold.ttf")
 
@@ -182,14 +194,12 @@ def process_welcome_card(
         font_name = ImageFont.load_default()
         font_sub = ImageFont.load_default()
 
-    # Vẽ HỌ TÊN (giữa dải đen)
+    # Vẽ chữ thật
     draw.text(
-        (500, 672), name.upper(), font=font_name, fill="white", anchor="mm"
+        (500, 690), name.upper(), font=font_name, fill="white", anchor="mm"
     )
-
-    # Vẽ CHỨC DANH & SQUAD
-    draw.text((500, 760), position, font=font_sub, fill="white", anchor="mm")
-    draw.text((500, 815), squad, font=font_sub, fill="white", anchor="mm")
+    draw.text((500, 775), position, font=font_sub, fill="white", anchor="mm")
+    draw.text((500, 830), squad, font=font_sub, fill="white", anchor="mm")
 
     buffered = io.BytesIO()
     canvas.convert("RGB").save(buffered, format="JPEG", quality=95)
