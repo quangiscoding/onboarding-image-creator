@@ -141,39 +141,41 @@ def process_welcome_card(
     position: str,
     squad: str,
 ) -> str:
-    # 1. Resize khung về chuẩn 1000x1000
+    # 1. Resize khung về chuẩn 1000x1000 và ép về kênh RGBA
     template = template.resize((1000, 1000), Image.Resampling.LANCZOS).convert(
         "RGBA"
     )
 
-    # 2. TẠO MASK ĐỤC LỖ KHUNG TEMPLATE:
-    # Đục lỗ tròn tâm X: 270->730, Y: 180->620 (Đường kính ~460px)
+    # 2. ĐỤC LỖ BẮT BỤC TRÊN KHUNG TEMPLATE:
+    # Tạo Mask màu trắng (255), vẽ hình tròn màu đen (0) chính xác tại vùng Avatar gốc (X: 235->765, Y: 215->615)
     mask_hole = Image.new("L", (1000, 1000), 255)
     draw_hole = ImageDraw.Draw(mask_hole)
-    draw_hole.ellipse((270, 180, 730, 620), fill=0)
+    # Vẽ hình ellipse đục thủng hoàn toàn nền xanh/trắng cũ
+    draw_hole.ellipse((235, 215, 765, 615), fill=0)
 
-    # Áp mask đục lỗ vào Alpha channel của khung (Xóa phần ảnh tròn cũ trên khung gốc)
-    r, g, b, a = template.split()
-    # Dùng ImageChops để nhân Alpha kênh hiện tại với Mask đục lỗ
+    # Áp mask vào Alpha channel của Template
     import PIL.ImageChops as ImageChops
 
+    r, g, b, a = template.split()
     new_alpha = ImageChops.multiply(a, mask_hole)
     template.putalpha(new_alpha)
 
-    # 3. GHÉP 3 LAYER THEO THỨ TỰ:
-    # Canvas nền chính
+    # 3. GHÉP CÁC LAYER THEO THỨ TỰ ĐÚNG BẢN CHẤT:
+    # Canvas tổng thể
     canvas = Image.new("RGBA", (1000, 1000), (255, 255, 255, 255))
 
-    # LAYER 1 (ĐÁY): Dán Avatar vuông/tròn to lấp đầy lỗ tròn (Avatar size 480px, Y=170)
-    # Lót dưới khung nên phóng to thoải mái không bao giờ lo đè chữ WELCOME ONBOARD
+    # --- LAYER 1 (ĐÁY): Dán Avatar Ứng Viên (Giữ hình vuông chuẩn 480x480, dán lót bên dưới)
+    # Vì nằm ở ĐÁY nên phần cạnh trên của avatar sẽ chui xuống DƯỚI nền đỏ của khung, KHÔNG BẠO GIỜ đè chữ WELCOME ONBOARD!
     avatar_size = 480
-    round_avatar = get_round_avatar(photo, avatar_size)
-    canvas.paste(round_avatar, (260, 160), round_avatar)
+    avatar_square = get_round_avatar(
+        photo, avatar_size
+    )  # Hoặc dùng photo vuông
+    canvas.paste(avatar_square, (260, 155), avatar_square)
 
-    # LAYER 2 (GIỮA): Dán Khung Đã Đục Lỗ Đè Lên Trên Avatar
+    # --- LAYER 2 (GIỮA): Dán Khung Đã Đục Lỗ Đè Lên Trên Avatar
     canvas.paste(template, (0, 0), template)
 
-    # LAYER 3 (TRÊN CÙNG): Che chữ mẫu & Vẽ chữ thật
+    # --- LAYER 3 (TRÊN CÙNG): Che chữ mẫu & Vẽ chữ thật
     draw = ImageDraw.Draw(canvas)
 
     # Che dải đen mẫu cũ & 2 chữ Position / Squad cũ
@@ -181,7 +183,7 @@ def process_welcome_card(
     bg_color = template.getpixel((100, 750))
     draw.rectangle([250, 725, 750, 850], fill=bg_color)
 
-    # Load Font (Local hoặc CDN)
+    # Load Font
     base_dir = os.path.dirname(os.path.abspath(__file__))
     font_path = os.path.join(base_dir, "fonts", "Montserrat-Bold.ttf")
 
@@ -209,6 +211,7 @@ def process_welcome_card(
     buffered = io.BytesIO()
     canvas.convert("RGB").save(buffered, format="JPEG", quality=95)
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
+
 
 @app.get("/")
 def health_check():
