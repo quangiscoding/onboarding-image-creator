@@ -5,12 +5,22 @@ import re
 from typing import Optional
 import cv2
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from pydantic import BaseModel
 import requests
 
 app = FastAPI(title="Onboarding Image Creator API")
+
+# 1. Bật CORS để trình duyệt web (index.html/Apps Script) gọi API không bị chặn
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class OnboardRequest(BaseModel):
@@ -21,9 +31,16 @@ class OnboardRequest(BaseModel):
     squad: str
 
 
+def load_image_from_bytes(data: bytes) -> Image.Image:
+    """Đọc bytes ảnh, tự động xoay theo EXIF và chuyển về RGBA"""
+    img = Image.open(io.BytesIO(data))
+    img = ImageOps.exif_transpose(img)  # Xử lý ảnh bị xoay ngược từ điện thoại
+    return img.convert("RGBA")
+
+
 def download_image(url: str) -> Image.Image:
     try:
-        # Tự động chuyển link Google Drive xem preview thành link direct download
+        # Tự động chuyển link Google Drive view/preview thành direct download
         drive_match = re.search(r"(?:id=|\/d\/)([a-zA-Z0-9_-]+)", url)
         if "drive.google.com" in url and drive_match:
             file_id = drive_match.group(1)
@@ -33,7 +50,8 @@ def download_image(url: str) -> Image.Image:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         response = requests.get(url, headers=headers, timeout=15)
-        return Image.open(io.BytesIO(response.content)).convert("RGBA")
+        response.raise_for_status()
+        return load_image_from_bytes(response.content)
     except Exception as e:
         raise HTTPException(
             status_code=400,
@@ -129,7 +147,7 @@ def health_check():
     return {"status": "ok", "message": "Onboarding Image Creator Service"}
 
 
-# Endpoint 1: Chuẩn JSON payload (Dùng khi có cả 2 link URL)
+# Endpoint 1: Nhận JSON payload
 @app.post("/generate-welcome-card")
 async def generate_welcome_card(req: OnboardRequest):
     photo = download_image(req.image_url)
@@ -140,7 +158,7 @@ async def generate_welcome_card(req: OnboardRequest):
     return {"success": True, "image_base64": img_str}
 
 
-# Endpoint 2: Linh hoạt nhận File Upload HOẶC URL/Drive Link cho cả Ảnh lẫn Khung
+# Endpoint 2: Linh hoạt nhận File Upload HOẶC URL/Drive Link
 @app.post("/generate-welcome-card-upload")
 async def generate_welcome_card_upload(
     file: Optional[UploadFile] = File(None),
@@ -152,24 +170,24 @@ async def generate_welcome_card_upload(
     squad: str = Form(...),
 ):
     try:
-        # 1. Lấy Ảnh Ứng Viên (Ưu tiên File Upload, nếu không có thì lấy Link URL/Drive)
-        if file:
+        # 1. Lấy Ảnh Ứng Viên
+        if file and file.filename:
             contents = await file.read()
-            photo = Image.open(io.BytesIO(contents)).convert("RGBA")
-        elif image_url:
-            photo = download_image(image_url)
+            photo = load_image_from_bytes(contents)
+        elif image_url and image_url.strip():
+            photo = download_image(image_url.strip())
         else:
             raise HTTPException(
                 status_code=400,
-                detail="Cần truyền ảnh ứng viên (file hoặc image_url)",
+                detail="Cần truyền ảnh ứng viên (file upload hoặc image_url)",
             )
 
-        # 2. Lấy Khung Template (Ưu tiên File Upload, nếu không có thì lấy Link URL/Drive)
-        if frame_file:
+        # 2. Lấy Khung Template
+        if frame_file and frame_file.filename:
             frame_contents = await frame_file.read()
-            template = Image.open(io.BytesIO(frame_contents)).convert("RGBA")
-        elif frame_url:
-            template = download_image(frame_url)
+            template = load_image_from_bytes(frame_contents)
+        elif frame_url and frame_url.strip():
+            template = download_image(frame_url.strip())
         else:
             raise HTTPException(
                 status_code=400,
