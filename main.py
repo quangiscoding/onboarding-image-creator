@@ -86,6 +86,7 @@ def download_image(url: str) -> Image.Image:
             detail=f"Không tải được ảnh từ URL/Drive: {str(e)}",
         )
 
+
 def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
     photo_np = np.array(photo.convert("RGB"))
     gray = cv2.cvtColor(photo_np, cv2.COLOR_RGB2GRAY)
@@ -101,10 +102,11 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
 
     if len(faces) > 0:
         x, y, w, h = max(faces, key=lambda b: b[2] * b[3])
-        crop_top = max(0, y - int(h * 0.65))
-        crop_bottom = min(height, y + h + int(h * 0.85))
-        crop_left = max(0, x - int(w * 0.55))
-        crop_right = min(width, x + w + int(w * 0.55))
+        # TĂNG PADDING ĐỂ GÓC CHỤP RỘNG HƠN (Không bị quá sát mặt)
+        crop_top = max(0, y - int(h * 1.2))
+        crop_bottom = min(height, y + h + int(h * 1.5))
+        crop_left = max(0, x - int(w * 1.1))
+        crop_right = min(width, x + w + int(w * 1.1))
         photo_cropped = photo.crop(
             (crop_left, crop_top, crop_right, crop_bottom)
         )
@@ -132,6 +134,7 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
 
     return round_img
 
+
 def process_welcome_card(
     photo: Image.Image,
     template: Image.Image,
@@ -142,47 +145,43 @@ def process_welcome_card(
     # 1. Resize khung về chuẩn 1000x1000
     template = template.resize((1000, 1000), Image.Resampling.LANCZOS)
 
-    # 2. Cắt & dán Avatar tròn (Kích thước 460px, đặt tại X: 270, Y: 180)
-    avatar_size = 460
+    # 2. CĂN TÂM AVATAR VỪA KHÍT (Size 465px, đặt tại X: 268, Y: 182)
+    avatar_size = 465
     round_avatar = get_round_avatar(photo, avatar_size)
-    template.paste(round_avatar, (270, 180), round_avatar)
+    template.paste(round_avatar, (268, 182), round_avatar)
 
     draw = ImageDraw.Draw(template)
 
     # 3. CHE CHỮ MẪU TRÊN KHUNG GỐC:
-    # - Che chữ "NAME" bằng cách vẽ lại dải bo góc màu đen mới (X: 200->800, Y: 615->705)
-    draw.rounded_rectangle(
-        [200, 615, 800, 705], radius=45, fill="#2b2b2b"
-    )  # Màu đen đè đè chữ NAME
+    # - Che chữ "NAME" bằng dải bo góc màu đen mới
+    draw.rounded_rectangle([200, 615, 800, 710], radius=45, fill="#2b2b2b")
 
-    # - Che chữ "Position" & "Squad" mẫu bằng hình chữ nhật màu đỏ của nền
-    # Màu đỏ nền gốc là #b9121b (hoặc RGB 185, 18, 27)
-    bg_color = template.getpixel((100, 750))  # Lấy màu đỏ tự động từ nền
-    draw.rectangle([350, 725, 650, 845], fill=bg_color)  # Xóa sạch chữ cũ
+    # - Che chữ "Position" & "Squad" mẫu bằng hình chữ nhật màu đỏ lấy tự động từ nền
+    bg_color = template.getpixel((100, 750))
+    draw.rectangle([250, 725, 750, 850], fill=bg_color)
 
-    # 4. LOAD FONT & VẼ CHỮ THẬT
-    font_path = os.path.join("fonts", "Montserrat-Bold.ttf")
+    # 4. LOAD FONT BẰNG ĐƯỜNG DẪN TUYỆT ĐỐI (Tránh bị rơi vào font mặc định bé tẹo)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    font_path = os.path.join(base_dir, "fonts", "Montserrat-Bold.ttf")
+
     try:
-        font_name = ImageFont.truetype(font_path, 34)
-        font_sub = ImageFont.truetype(font_path, 25)
+        font_name = ImageFont.truetype(font_path, 36)
+        font_sub = ImageFont.truetype(font_path, 28)
     except IOError:
         font_name = ImageFont.load_default()
         font_sub = ImageFont.load_default()
 
-    # - Vẽ HỌ TÊN (Nằm giữa dải đen)
+    # 5. VẼ CHỮ TO RÕ NÉT VÀO TỌA ĐỘ BẮT MẮT
     draw.text(
-        (500, 660), name.upper(), font=font_name, fill="white", anchor="mm"
+        (500, 662), name.upper(), font=font_name, fill="white", anchor="mm"
     )
-
-    # - Vẽ CHỨC DANH (Position)
     draw.text((500, 755), position, font=font_sub, fill="white", anchor="mm")
-
-    # - Vẽ SQUAD
-    draw.text((500, 818), squad, font=font_sub, fill="white", anchor="mm")
+    draw.text((500, 815), squad, font=font_sub, fill="white", anchor="mm")
 
     buffered = io.BytesIO()
     template.convert("RGB").save(buffered, format="JPEG", quality=95)
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
+
 
 @app.get("/")
 def health_check():
