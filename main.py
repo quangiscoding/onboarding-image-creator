@@ -132,7 +132,6 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
 
     return round_img
 
-
 def process_welcome_card(
     photo: Image.Image,
     template: Image.Image,
@@ -140,34 +139,36 @@ def process_welcome_card(
     position: str,
     squad: str,
 ) -> str:
+    # 1. Resize khung về chuẩn 1000x1000
     template = template.resize((1000, 1000), Image.Resampling.LANCZOS)
 
-    avatar_size = 470
+    # 2. Cắt avatar tròn cỡ 380px và đặt vào tâm khung hình tròn (Toạ độ X: 310, Y: 180)
+    avatar_size = 380
     round_avatar = get_round_avatar(photo, avatar_size)
-    template.paste(round_avatar, (265, 225), round_avatar)
+    template.paste(round_avatar, (310, 180), round_avatar)
 
     draw = ImageDraw.Draw(template)
     font_path = os.path.join("fonts", "Montserrat-Bold.ttf")
 
     try:
-        font_name_text = ImageFont.truetype(font_path, 36)
-        font_sub_text = ImageFont.truetype(font_path, 28)
+        font_name = ImageFont.truetype(font_path, 32)
+        font_sub = ImageFont.truetype(font_path, 22)
     except IOError:
-        font_name_text = ImageFont.load_default()
-        font_sub_text = ImageFont.load_default()
+        font_name = ImageFont.load_default()
+        font_sub = ImageFont.load_default()
 
-    draw.text(
-        (500, 645), name.upper(), font=font_name_text, fill="white", anchor="mm"
-    )
-    draw.text(
-        (500, 740), position, font=font_sub_text, fill="white", anchor="mm"
-    )
-    draw.text((500, 805), squad, font=font_sub_text, fill="white", anchor="mm")
+    # 3. Vẽ HỌ TÊN vào giữa dải bo góc màu đen (Y ~ 605)
+    draw.text((500, 605), name.upper(), font=font_name, fill="white", anchor="mm")
+
+    # 4. Vẽ CHỨC DANH ngay DƯỚI chữ Position có sẵn (Y ~ 725)
+    draw.text((500, 725), position, font=font_sub, fill="white", anchor="mm")
+
+    # 5. Vẽ SQUAD ngay DƯỚI chữ Squad có sẵn (Y ~ 800)
+    draw.text((500, 800), squad, font=font_sub, fill="white", anchor="mm")
 
     buffered = io.BytesIO()
     template.convert("RGB").save(buffered, format="JPEG", quality=95)
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
-
 
 @app.get("/")
 def health_check():
