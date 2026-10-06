@@ -141,30 +141,36 @@ def process_welcome_card(
     position: str,
     squad: str,
 ) -> str:
-    # 1. Resize khung về chuẩn 1000x1000 và đưa về RGBA
-    template = template.resize((1000, 1000), Image.Resampling.LANCZOS).convert("RGBA")
+    # 1. Resize khung về chuẩn 1000x1000
+    template = template.resize((1000, 1000), Image.Resampling.LANCZOS).convert(
+        "RGBA"
+    )
 
-    # 2. TỰ ĐỘNG ĐỤC LỖ KHUNG TEMPLATE (Biến vùng hình tròn màu sáng ở tâm thành trong suốt)
-    # Tạo Mask hình tròn đục lỗ tại tâm (X: 265 -> 735, Y: 175 -> 625, Đường kính ~470px)
-    hole_mask = Image.new("L", (1000, 1000), 255)
-    hole_draw = ImageDraw.Draw(hole_mask)
-    hole_draw.ellipse((270, 180, 730, 620), fill=0) # Đục lỗ tròn tại vùng avatar
-    
-    # Áp mask đục lỗ vào kênh Alpha của Template
-    alpha = template.split()[3]
-    alpha = ImageOps.bitwise_and(alpha, hole_mask)
-    template.putalpha(alpha)
+    # 2. TẠO MASK ĐỤC LỖ KHUNG TEMPLATE:
+    # Đục lỗ tròn tâm X: 270->730, Y: 180->620 (Đường kính ~460px)
+    mask_hole = Image.new("L", (1000, 1000), 255)
+    draw_hole = ImageDraw.Draw(mask_hole)
+    draw_hole.ellipse((270, 180, 730, 620), fill=0)
 
-    # 3. TẠO CỀN MỚI & DÁN LAYER THEO THỨ TỰ:
-    # Canvas nền chính (1000x1000)
+    # Áp mask đục lỗ vào Alpha channel của khung (Xóa phần ảnh tròn cũ trên khung gốc)
+    r, g, b, a = template.split()
+    # Dùng ImageChops để nhân Alpha kênh hiện tại với Mask đục lỗ
+    import PIL.ImageChops as ImageChops
+
+    new_alpha = ImageChops.multiply(a, mask_hole)
+    template.putalpha(new_alpha)
+
+    # 3. GHÉP 3 LAYER THEO THỨ TỰ:
+    # Canvas nền chính
     canvas = Image.new("RGBA", (1000, 1000), (255, 255, 255, 255))
 
-    # LAYER 1 (ĐÁY): Dán Avatar vào tâm (Avatar size 490px, đè thoải mái bên dưới không sợ lấn chữ)
-    avatar_size = 490
+    # LAYER 1 (ĐÁY): Dán Avatar vuông/tròn to lấp đầy lỗ tròn (Avatar size 480px, Y=170)
+    # Lót dưới khung nên phóng to thoải mái không bao giờ lo đè chữ WELCOME ONBOARD
+    avatar_size = 480
     round_avatar = get_round_avatar(photo, avatar_size)
-    canvas.paste(round_avatar, (255, 155), round_avatar)
+    canvas.paste(round_avatar, (260, 160), round_avatar)
 
-    # LAYER 2 (GIỮA): Dán Khung Đã Đục Lỗ lên trên Avatar
+    # LAYER 2 (GIỮA): Dán Khung Đã Đục Lỗ Đè Lên Trên Avatar
     canvas.paste(template, (0, 0), template)
 
     # LAYER 3 (TRÊN CÙNG): Che chữ mẫu & Vẽ chữ thật
@@ -194,7 +200,9 @@ def process_welcome_card(
         font_sub = ImageFont.load_default()
 
     # Vẽ chữ thật
-    draw.text((500, 662), name.upper(), font=font_name, fill="white", anchor="mm")
+    draw.text(
+        (500, 662), name.upper(), font=font_name, fill="white", anchor="mm"
+    )
     draw.text((500, 755), position, font=font_sub, fill="white", anchor="mm")
     draw.text((500, 815), squad, font=font_sub, fill="white", anchor="mm")
 
