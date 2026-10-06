@@ -7,6 +7,7 @@ import cv2
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
+import PIL.ImageChops as ImageChops
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from pydantic import BaseModel
 import requests
@@ -95,18 +96,20 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
         cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
     )
     faces = face_cascade.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=5, minSize=(100, 100)
+        gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80)
     )
 
     width, height = photo.size
 
     if len(faces) > 0:
         x, y, w, h = max(faces, key=lambda b: b[2] * b[3])
-        # TĂNG PADDING ĐỂ GÓC CHỤP RỘNG HƠN (Không bị quá sát mặt)
-        crop_top = max(0, y - int(h * 1.2))
-        crop_bottom = min(height, y + h + int(h * 1.5))
-        crop_left = max(0, x - int(w * 1.1))
-        crop_right = min(width, x + w + int(w * 1.1))
+
+        # TĂNG MẠNH PADDING ĐỂ ZOOM RỘNG HƠN HẲN (Kéo nhiều không gian phía trên đầu & vai)
+        crop_top = max(0, y - int(h * 2.2))
+        crop_bottom = min(height, y + h + int(h * 1.8))
+        crop_left = max(0, x - int(w * 1.6))
+        crop_right = min(width, x + w + int(w * 1.6))
+
         photo_cropped = photo.crop(
             (crop_left, crop_top, crop_right, crop_bottom)
         )
@@ -121,8 +124,12 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
             )
         )
 
+    # centering=(0.5, 0.3) giúp giữ vị trí khuôn mặt nằm cân đối ở 1/3 phía trên
     photo_square = ImageOps.fit(
-        photo_cropped, (size, size), Image.Resampling.LANCZOS
+        photo_cropped,
+        (size, size),
+        Image.Resampling.LANCZOS,
+        centering=(0.5, 0.3),
     )
 
     mask = Image.new("L", (size, size), 0)
@@ -133,8 +140,6 @@ def get_round_avatar(photo: Image.Image, size: int) -> Image.Image:
     round_img.paste(photo_square, (0, 0), mask)
 
     return round_img
-
-import PIL.ImageChops as ImageChops
 
 
 def process_welcome_card(
@@ -204,6 +209,7 @@ def process_welcome_card(
     buffered = io.BytesIO()
     canvas.convert("RGB").save(buffered, format="JPEG", quality=95)
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
+
 
 @app.get("/")
 def health_check():
